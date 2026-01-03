@@ -8,6 +8,8 @@ bun.lockb
 .env.*.local
 
 # Build output
+server/dist/
+server/node_modules/
 *.log
 
 # IDE

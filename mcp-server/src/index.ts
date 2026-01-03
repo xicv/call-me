@@ -21,7 +21,7 @@ function getCallManager(): CallManager {
 
 const server = new Server(
   {
-    name: 'hey-boss',
+    name: 'callme',
     version: '2.0.0',
   },
   {
@@ -179,7 +179,7 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
-  console.error('Hey Boss MCP server running on stdio');
+  console.error('CallMe MCP server running on stdio');
   console.error('Stateful call manager ready - supports multi-turn conversations');
 }
 

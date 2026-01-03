@@ -1,11 +1,11 @@
 {
-  "name": "hey-boss-mcp",
+  "name": "callme-mcp",
   "version": "2.0.0",
   "description": "Phone call input for Claude Code - Claude calls you when it needs your input",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "hey-boss-mcp": "dist/index.js"
+    "callme-mcp": "dist/index.js"
   },
   "files": [
     "dist"
@@ -26,7 +26,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/ZeframLou/hey-boss.git"
+    "url": "https://github.com/ZeframLou/callme.git"
   },
   "license": "MIT",
   "engines": {

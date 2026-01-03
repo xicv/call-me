@@ -1,27 +1,21 @@
 {
-  "name": "hey-boss",
+  "name": "callme",
   "version": "2.0.0",
-  "description": "Phone call input for Claude Code - Claude calls you when it needs your input",
+  "description": "Claude calls you on the phone when it needs your input or wants to report progress",
   "author": {
     "name": "ZeframLou",
     "url": "https://github.com/ZeframLou"
   },
-  "repository": "https://github.com/ZeframLou/hey-boss",
+  "repository": "https://github.com/ZeframLou/callme",
   "license": "MIT",
-  "keywords": ["phone", "voice", "twilio", "mcp", "input"],
+  "keywords": ["phone", "voice", "calls", "input"],
   "skills": "./skills",
   "mcpServers": {
-    "hey-boss": {
-      "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp-server/dist/index.js"],
-      "env": {
-        "TWILIO_ACCOUNT_SID": "${TWILIO_ACCOUNT_SID}",
-        "TWILIO_AUTH_TOKEN": "${TWILIO_AUTH_TOKEN}",
-        "TWILIO_PHONE_NUMBER": "${TWILIO_PHONE_NUMBER}",
-        "USER_PHONE_NUMBER": "${USER_PHONE_NUMBER}",
-        "OPENAI_API_KEY": "${OPENAI_API_KEY}",
-        "PUBLIC_URL": "${PUBLIC_URL}",
-        "PORT": "${PORT:-3000}"
+    "callme": {
+      "url": "${CALLME_URL:-https://api.callme.dev}/mcp",
+      "transport": "http",
+      "headers": {
+        "Authorization": "Bearer ${CALLME_API_KEY}"
       }
     }
   }

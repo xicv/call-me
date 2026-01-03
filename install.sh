@@ -1,10 +1,10 @@
 #!/bin/bash
-# Development build script - for contributing to hey-boss
-# Users should install via: claude mcp add hey-boss -- npx -y hey-boss-mcp
+# Development build script - for contributing to callme
+# Users should install via: claude mcp add callme -- npx -y callme-mcp
 
 set -e
 
-echo "Building hey-boss for development..."
+echo "Building callme for development..."
 
 if ! command -v bun &> /dev/null; then
     echo "Installing bun..."
@@ -20,7 +20,7 @@ cd ..
 echo "Build complete!"
 echo ""
 echo "For users: Install via npm (no build required):"
-echo "  claude mcp add hey-boss -- npx -y hey-boss-mcp"
+echo "  claude mcp add callme -- npx -y callme-mcp"
 echo ""
 echo "For development: Test local build with:"
-echo "  claude mcp add hey-boss-dev -- node $(pwd)/mcp-server/dist/index.js"
+echo "  claude mcp add callme-dev -- node $(pwd)/mcp-server/dist/index.js"
