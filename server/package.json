@@ -1,0 +1,23 @@
+{
+  "name": "hey-boss-server",
+  "version": "2.0.0",
+  "description": "Hey Boss SaaS server - hosted phone call service for Claude Code",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target node --format esm",
+    "dev": "bun --watch src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "twilio": "^5.3.5",
+    "openai": "^4.77.3",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/ws": "^8.5.13",
+    "bun-types": "latest"
+  }
+}
