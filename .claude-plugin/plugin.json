@@ -12,8 +12,8 @@
   "skills": "./skills",
   "mcpServers": {
     "callme": {
-      "command": "bun",
-      "args": ["run", "${CLAUDE_PLUGIN_ROOT}/server/src/index.ts"],
+      "command": "bash",
+      "args": ["-c", "cd ${CLAUDE_PLUGIN_ROOT}/server && bun install --silent && bun run src/index.ts"],
       "env": {
         "CALLME_PHONE_ACCOUNT_SID": "${CALLME_PHONE_ACCOUNT_SID}",
         "CALLME_PHONE_AUTH_TOKEN": "${CALLME_PHONE_AUTH_TOKEN}",
