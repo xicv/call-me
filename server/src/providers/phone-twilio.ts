@@ -16,6 +16,9 @@ interface TwilioCallResponse {
   status: string;
 }
 
+// Re-export for use in phone-call.ts
+export type { TwilioCallResponse };
+
 export class TwilioPhoneProvider implements PhoneProvider {
   readonly name = 'twilio';
   private accountSid: string | null = null;
@@ -46,6 +49,8 @@ export class TwilioPhoneProvider implements PhoneProvider {
           To: to,
           From: from,
           Url: webhookUrl,
+          StatusCallback: webhookUrl,  // Receive call status updates (answered, completed, etc.)
+          StatusCallbackEvent: 'initiated ringing answered completed',
           MachineDetection: 'Enable',
           MachineDetectionTimeout: '5',
         }).toString(),
@@ -106,12 +111,14 @@ export class TwilioPhoneProvider implements PhoneProvider {
    * This is called when Twilio requests the webhook URL after call is answered
    */
   getStreamConnectXml(streamUrl: string): string {
+    // <Connect><Stream> creates a bidirectional stream
+    // - Automatically receives only inbound audio (user's voice) for STT
+    // - Allows sending audio back via WebSocket media messages
+    // Note: "track" attribute is NOT valid for <Connect><Stream>, only for <Start><Stream>
     return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Connect>
-    <Stream url="${streamUrl}">
-      <Parameter name="track" value="both_tracks"/>
-    </Stream>
+    <Stream url="${streamUrl}" />
   </Connect>
 </Response>`;
   }
