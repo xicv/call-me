@@ -1,38 +1,15 @@
 # CallMe
 
-**Claude Code Plugin** - Claude calls you on the phone when it needs your input or wants to report progress.
+**Let Claude call you.**
 
-## Why CallMe?
+Start a task, walk away. Claude calls when it's done, stuck, or needs a decision.
 
-You start Claude on a complex task and walk away. Maybe you're making coffee, taking a meeting, or stepping out for lunch. With CallMe, Claude can reach you when it matters - no need to keep checking your terminal.
+### When Claude Calls
 
-### Example Scenarios
-
-**Long-running tasks** — You kick off a database migration that takes 30 minutes. Instead of watching the terminal, you go make lunch. Claude calls when it's done or if something breaks.
-
-**Architecture decisions** — While refactoring the auth system, Claude discovers two viable approaches with different trade-offs. Rather than picking one arbitrarily, Claude calls to walk through the options.
-
-**Blocked by unclear requirements** — The spec doesn't cover edge cases in the payment flow. Claude calls to clarify what should happen when a card is declined before writing code that might be wrong.
-
-**Deployment approvals** — Staging deployment succeeds and tests pass. Claude calls for the go-ahead before pushing to production.
-
-**Research summaries** — After analyzing three API options, Claude calls to explain the recommendation and trade-offs rather than writing a wall of text you'll skim later.
-
-### How It Changes Your Workflow
-
-Without CallMe:
-1. Start Claude on a task
-2. Keep checking terminal every few minutes
-3. Context switch repeatedly
-4. Miss the moment Claude needs input
-5. Waste time waiting
-
-With CallMe:
-1. Start Claude on a task
-2. Do other work (or take a break)
-3. Phone rings when Claude needs you
-4. Quick conversation, back to your day
-5. Claude continues autonomously
+- **Task done** — Migration finished, tests passing, ready for review
+- **Decision needed** — Found two approaches, wants your input
+- **Blocked** — Spec unclear, needs clarification before proceeding
+- **Approval required** — Staging passed, waiting for go-ahead on prod
 
 ---
 
@@ -210,16 +187,6 @@ await end_call({
   message: "Perfect, I'll get started. Talk soon!"
 });
 ```
-
----
-
-## When Claude Calls You
-
-- **Task completed** - Status report, asking what's next
-- **Decision needed** - Architecture, technology choices
-- **Blocked** - Needs clarification to continue
-
-Claude won't call for simple yes/no questions.
 
 ---
 
