@@ -6,7 +6,7 @@
       "name": "callme-mcp",
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.0.4",
-        "@ngrok/ngrok": "^1.4.1",
+        "@ngrok/ngrok": "^1.7.0",
         "openai": "^4.77.3",
         "ws": "^8.18.0",
       },
