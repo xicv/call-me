@@ -15,7 +15,7 @@ export interface TelegramProvider {
   readonly name: string;
   initialize(config: TelegramConfig): void;
   sendMessage(text: string): Promise<number>; // Returns message ID
-  getUpdates(offset?: number): Promise<TelegramUpdate[]>;
+  getUpdates(offset?: number, timeoutSeconds?: number): Promise<TelegramUpdate[]>;
   deleteWebhook(): Promise<void>;
 }
 
@@ -121,9 +121,9 @@ export class TelegramBotProvider implements TelegramProvider {
     return result.message_id;
   }
 
-  async getUpdates(offset?: number): Promise<TelegramUpdate[]> {
+  async getUpdates(offset?: number, timeoutSeconds: number = 30): Promise<TelegramUpdate[]> {
     const params = new URLSearchParams({
-      timeout: '30',
+      timeout: String(timeoutSeconds),
       allowed_updates: JSON.stringify(['message']),
     });
     if (offset !== undefined) {

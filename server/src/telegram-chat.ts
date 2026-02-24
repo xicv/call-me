@@ -87,8 +87,8 @@ export class TelegramChatManager {
     // Delete any existing webhook to use long polling
     await this.telegram.deleteWebhook();
 
-    // Get current update offset to ignore old messages
-    const updates = await this.telegram.getUpdates();
+    // Get current update offset to ignore old messages (timeout=0 to avoid blocking MCP handshake)
+    const updates = await this.telegram.getUpdates(undefined, 0);
     if (updates.length > 0) {
       this.globalUpdateOffset = updates[updates.length - 1].update_id + 1;
     }
