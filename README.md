@@ -274,6 +274,163 @@ Users can send these commands anytime via Telegram, even when Claude isn't activ
 - Background command polling processes `/verbose` and `/help` even when Claude isn't messaging
 - Automatic retry with exponential backoff on network errors
 
+<details>
+<summary><b>Architecture Diagram</b></summary>
+
+```mermaid
+flowchart TD
+    %% ── Startup ──────────────────────────────────────────
+    subgraph INIT["🚀 Startup"]
+        direction TB
+        S1[main] --> S2[loadTelegramConfig]
+        S2 --> S3{Env vars set?}
+        S3 -->|Missing| S4[exit 1]
+        S3 -->|OK| S5[new TelegramChatManager]
+        S5 --> S6["deleteWebhook()"]
+        S6 --> S7["getUpdates(timeout=0)<br/>drain old messages"]
+        S7 --> S8[Set globalUpdateOffset]
+        S8 --> S9["startCommandPolling() async"]
+        S9 --> S10["StdioServerTransport.connect()"]
+        S10 --> IDLE
+    end
+
+    %% ── Idle State ───────────────────────────────────────
+    IDLE((🟢 IDLE<br/>Background Polling))
+
+    subgraph BGPOLL["⏳ Background Command Polling (every 2s)"]
+        direction TB
+        BP1["getUpdates(offset, timeout=30)"] --> BP2{Message from<br/>target user?}
+        BP2 -->|No / other user| BP1
+        BP2 -->|Yes| BP3{Is slash<br/>command?}
+        BP3 -->|"/verbose, /help"| BP4["Handle command<br/>Send response"]
+        BP4 --> BP1
+        BP3 -->|Regular text| BP5["Reply: 'Not in a conversation.<br/>Claude will message when needed.'"]
+        BP5 --> BP1
+    end
+
+    IDLE -.->|"activeChats=0<br/>isListening=false"| BGPOLL
+
+    %% ── Tool: broadcast ──────────────────────────────────
+    subgraph BROADCAST["📢 broadcast"]
+        direction TB
+        BR1["sendMessage(text)"] --> BR2["Return 'Message sent.'"]
+    end
+    IDLE -->|"Claude calls broadcast"| BROADCAST
+    BROADCAST --> IDLE
+
+    %% ── Tool: send_message ───────────────────────────────
+    subgraph SEND["💬 send_message → Starts Conversation"]
+        direction TB
+        SM1["Create ChatState<br/>chatId = chat-N-timestamp"] --> SM2["sendMessage(text) → Telegram"]
+        SM2 --> SM3["Push to conversationHistory"]
+        SM3 --> WAIT1["waitForResponse()"]
+    end
+    IDLE -->|"Claude calls send_message"| SEND
+
+    %% ── waitForResponse detail ───────────────────────────
+    subgraph WAITLOOP["🔄 waitForResponse (shared by send_message & continue_chat)"]
+        direction TB
+        W1["getUpdates(lastUpdateId, timeout=30)"] --> W2{Message from<br/>target user?}
+        W2 -->|No updates| W3{Timeout<br/>exceeded?}
+        W3 -->|"< responseTimeoutMs"| W1
+        W3 -->|">= responseTimeoutMs"| W4["Throw: Response timeout"]
+        W2 -->|Yes| W5{Is slash<br/>command?}
+        W5 -->|"/verbose, /help"| W6["Handle command<br/>Send response"]
+        W6 --> W1
+        W5 -->|Regular text| W7["Return user's response"]
+    end
+    WAIT1 --> WAITLOOP
+
+    %% ── Active Conversation State ────────────────────────
+    ACTIVE((🔵 ACTIVE CHAT<br/>chatId in activeChats))
+    WAITLOOP -->|"User responded"| ACTIVE
+
+    %% ── Tool: continue_chat ──────────────────────────────
+    subgraph CONTINUE["🔁 continue_chat"]
+        direction TB
+        CC1{Chat exists<br/>& not ended?} -->|No| CC2[Throw error]
+        CC1 -->|Yes| CC3["sendMessage(text) → Telegram"]
+        CC3 --> CC4["Push to conversationHistory"]
+        CC4 --> WAIT2["waitForResponse()"]
+    end
+    ACTIVE -->|"Claude calls continue_chat"| CONTINUE
+    WAIT2 --> WAITLOOP
+    WAITLOOP -->|"User responded<br/>(from continue)"| ACTIVE
+
+    %% ── Tool: notify_user ────────────────────────────────
+    subgraph NOTIFY["📌 notify_user (fire & forget)"]
+        direction TB
+        NU1{Chat exists<br/>& not ended?} -->|No| NU2[Throw error]
+        NU1 -->|Yes| NU3["sendMessage(text) → Telegram"]
+        NU3 --> NU4["Push to history<br/>No wait for response"]
+    end
+    ACTIVE -->|"Claude calls notify_user"| NOTIFY
+    NOTIFY --> ACTIVE
+
+    %% ── Tool: end_chat ───────────────────────────────────
+    subgraph ENDCHAT["🔚 end_chat"]
+        direction TB
+        EC1{Chat exists?} -->|No| EC2[Throw error]
+        EC1 -->|Yes| EC3["sendMessage(closing) → Telegram"]
+        EC3 --> EC4["Set state.ended = true"]
+        EC4 --> EC5["Calculate duration"]
+        EC5 --> EC6["Update globalUpdateOffset"]
+        EC6 --> EC7["Delete from activeChats"]
+    end
+    ACTIVE -->|"Claude calls end_chat"| ENDCHAT
+    ENDCHAT --> IDLE
+
+    %% ── Tool: listen_for_commands ────────────────────────
+    subgraph LISTEN["🎧 listen_for_commands (LISTEN_MODE=true only)"]
+        direction TB
+        LF1["Set isListening = true<br/>Pauses background polling"] --> LF2["Send prompt or<br/>'Listening for commands...'"]
+        LF2 --> LF3["getUpdates(offset, timeout=30)"]
+        LF3 --> LF4{Message from<br/>target user?}
+        LF4 -->|No| LF5{24h timeout?}
+        LF5 -->|No| LF3
+        LF5 -->|Yes| LF6["Throw: Listen timeout"]
+        LF4 -->|Yes| LF7{Is slash<br/>command?}
+        LF7 -->|"/verbose, /help"| LF8["Handle command<br/>Send response"]
+        LF8 --> LF3
+        LF7 -->|Regular text| LF9["Return command text<br/>Set isListening = false"]
+    end
+    IDLE -->|"Claude calls listen_for_commands"| LISTEN
+    LISTEN -->|"Command received<br/>Claude processes it"| IDLE
+
+    %% ── Shutdown ─────────────────────────────────────────
+    subgraph SHUTDOWN["⛔ Shutdown (SIGINT/SIGTERM)"]
+        direction TB
+        SD1["Set shutdownRequested = true"] --> SD2["For each active chat:<br/>endChat('Session ended. Goodbye!')"]
+        SD2 --> SD3["Background polling stops"] --> SD4["process.exit(0)"]
+    end
+    IDLE -->|SIGINT/SIGTERM| SHUTDOWN
+    ACTIVE -->|SIGINT/SIGTERM| SHUTDOWN
+
+    %% ── Telegram API Layer ───────────────────────────────
+    subgraph RETRY["🔄 fetchWithRetry (all API calls)"]
+        direction LR
+        R1[fetch] -->|Success| R2[Return result]
+        R1 -->|"5xx / network error"| R3["Retry with<br/>exponential backoff<br/>delay × 2^attempt"]
+        R3 -->|"≤ maxRetries"| R1
+        R3 -->|"> maxRetries"| R4[Throw error]
+        R1 -->|"4xx (not 429)"| R4
+        R1 -->|429 rate limit| R3
+    end
+
+    %% Styling
+    style IDLE fill:#22c55e,color:#fff
+    style ACTIVE fill:#3b82f6,color:#fff
+    style S4 fill:#ef4444,color:#fff
+    style W4 fill:#ef4444,color:#fff
+    style CC2 fill:#ef4444,color:#fff
+    style NU2 fill:#ef4444,color:#fff
+    style EC2 fill:#ef4444,color:#fff
+    style LF6 fill:#ef4444,color:#fff
+    style R4 fill:#ef4444,color:#fff
+```
+
+</details>
+
 ---
 
 ## Multi-Platform Support
