@@ -240,19 +240,39 @@ Skip the phone setup entirely. Message via Telegram instead - free, text-based, 
 
 | Tool | Description |
 |------|-------------|
-| `send_message` | Start conversation, wait for response |
-| `continue_chat` | Follow-up messages |
-| `notify_user` | One-way notification (no response expected) |
-| `end_chat` | Close conversation |
-| `broadcast` | Stream output to user |
+| `send_message` | Start conversation, wait for response. Returns chat ID and user's reply. |
+| `continue_chat` | Send follow-up in active chat, wait for response. Requires chat ID from `send_message`. |
+| `notify_user` | Send message in active chat without waiting for response. Use for status updates mid-conversation. |
+| `end_chat` | Close conversation with a closing message. Returns chat duration. |
+| `broadcast` | Stream output to user (one-way, no response expected). |
+| `listen_for_commands` | Wait for user to send commands via Telegram. Requires `CALLME_TELEGRAM_LISTEN=true`. Enables remote control of Claude. |
+
+### Built-in Commands
+
+Users can send these commands anytime via Telegram, even when Claude isn't actively messaging:
+
+| Command | Description |
+|---------|-------------|
+| `/verbose on` | Enable output streaming to Telegram |
+| `/verbose off` | Disable output streaming |
+| `/verbose` | Show current verbose mode status |
+| `/help` | Display available commands |
 
 ### Telegram Options
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `CALLME_RESPONSE_TIMEOUT_MS` | `300000` | Response timeout (5 minutes) |
-| `CALLME_TELEGRAM_VERBOSE` | `false` | Stream all output to Telegram |
-| `CALLME_TELEGRAM_LISTEN` | `false` | Enable `listen_for_commands` tool |
+| `CALLME_TELEGRAM_VERBOSE` | `false` | Stream all output to Telegram. When enabled, `broadcast` streams liberally. When disabled, `broadcast` sends brief notifications. |
+| `CALLME_TELEGRAM_LISTEN` | `false` | Enable `listen_for_commands` tool for remote control via Telegram |
+
+### How Telegram Mode Works
+
+- Uses **long polling** (~2 second intervals) to receive messages - no webhooks needed
+- Each chat gets a unique ID for multi-turn conversations
+- Multiple concurrent chats are supported
+- Background command polling processes `/verbose` and `/help` even when Claude isn't messaging
+- Automatic retry with exponential backoff on network errors
 
 ---
 
@@ -489,7 +509,12 @@ If you see `[Security] Twilio signature mismatch` in the logs:
 ```bash
 cd server
 bun install
+
+# Phone mode
 bun run dev
+
+# Telegram mode
+bun run dev:telegram
 ```
 
 ---
