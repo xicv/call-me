@@ -80,7 +80,8 @@ export class TelegramBotProvider implements TelegramProvider {
             response.status,
             `Telegram API error (${response.status}): ${errorText}`,
           );
-          if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+          // Don't retry client errors, except 429 (rate limit) and 409 (conflict/duplicate poll)
+          if (response.status >= 400 && response.status < 500 && response.status !== 429 && response.status !== 409) {
             throw apiError;
           }
           throw apiError;
@@ -99,11 +100,12 @@ export class TelegramBotProvider implements TelegramProvider {
 
         lastError = error instanceof Error ? error : new Error(String(error));
 
-        // Don't retry on client errors (4xx) except 429 rate limit
+        // Don't retry on client errors (4xx) except 429 rate limit and 409 conflict
         if (lastError instanceof TelegramApiError
             && lastError.statusCode >= 400
             && lastError.statusCode < 500
-            && lastError.statusCode !== 429) {
+            && lastError.statusCode !== 429
+            && lastError.statusCode !== 409) {
           throw lastError;
         }
 
