@@ -6,16 +6,26 @@
 
 export interface TelegramConfig {
   botToken: string;
-  chatId: string; // User's chat ID
-  maxRetries?: number; // Max retry attempts (default: 3)
-  retryDelayMs?: number; // Initial retry delay in ms (default: 1000)
+  chatId: string;
+  maxRetries?: number;
+  retryDelayMs?: number;
+}
+
+export class TelegramApiError extends Error {
+  constructor(
+    public readonly statusCode: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'TelegramApiError';
+  }
 }
 
 export interface TelegramProvider {
   readonly name: string;
   initialize(config: TelegramConfig): void;
-  sendMessage(text: string): Promise<number>; // Returns message ID
-  getUpdates(offset?: number, timeoutSeconds?: number): Promise<TelegramUpdate[]>;
+  sendMessage(text: string): Promise<number>;
+  getUpdates(offset?: number, timeoutSeconds?: number, signal?: AbortSignal): Promise<TelegramUpdate[]>;
   deleteWebhook(): Promise<void>;
 }
 
@@ -53,13 +63,10 @@ export class TelegramBotProvider implements TelegramProvider {
     this.retryDelayMs = config.retryDelayMs ?? 1000;
   }
 
-  /**
-   * Execute a fetch request with exponential backoff retry logic
-   */
   private async fetchWithRetry<T>(
     url: string,
     options?: RequestInit,
-    operation: string = 'API call'
+    operation: string = 'API call',
   ): Promise<T> {
     let lastError: Error | null = null;
 
@@ -69,23 +76,34 @@ export class TelegramBotProvider implements TelegramProvider {
 
         if (!response.ok) {
           const errorText = await response.text();
-          // Don't retry on client errors (4xx) except 429 (rate limit)
+          const apiError = new TelegramApiError(
+            response.status,
+            `Telegram API error (${response.status}): ${errorText}`,
+          );
           if (response.status >= 400 && response.status < 500 && response.status !== 429) {
-            throw new Error(`Telegram API error (${response.status}): ${errorText}`);
+            throw apiError;
           }
-          throw new Error(`Telegram API error (${response.status}): ${errorText}`);
+          throw apiError;
         }
 
         const result = await response.json() as { ok: boolean; result: T };
         if (!result.ok) {
-          throw new Error(`Telegram API returned ok=false`);
+          throw new Error('Telegram API returned ok=false');
         }
         return result.result;
       } catch (error) {
+        // Never retry aborted requests
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          throw error;
+        }
+
         lastError = error instanceof Error ? error : new Error(String(error));
 
-        // Don't retry on client errors (except rate limits which we handle above)
-        if (lastError.message.includes('(4') && !lastError.message.includes('(429)')) {
+        // Don't retry on client errors (4xx) except 429 rate limit
+        if (lastError instanceof TelegramApiError
+            && lastError.statusCode >= 400
+            && lastError.statusCode < 500
+            && lastError.statusCode !== 429) {
           throw lastError;
         }
 
@@ -105,23 +123,44 @@ export class TelegramBotProvider implements TelegramProvider {
   }
 
   async sendMessage(text: string): Promise<number> {
-    const result = await this.fetchWithRetry<{ message_id: number }>(
-      `${this.baseUrl}/sendMessage`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: this.chatId,
-          text,
-          parse_mode: 'Markdown',
-        }),
-      },
-      'sendMessage'
-    );
-    return result.message_id;
+    try {
+      const result = await this.fetchWithRetry<{ message_id: number }>(
+        `${this.baseUrl}/sendMessage`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: this.chatId,
+            text,
+            parse_mode: 'Markdown',
+          }),
+        },
+        'sendMessage',
+      );
+      return result.message_id;
+    } catch (error) {
+      // Markdown parse failure -> retry as plain text (only for entity parsing errors)
+      if (error instanceof TelegramApiError && error.statusCode === 400 && error.message.includes("can't parse entities")) {
+        console.error('[Telegram] Markdown parse failed, retrying as plain text');
+        const result = await this.fetchWithRetry<{ message_id: number }>(
+          `${this.baseUrl}/sendMessage`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: this.chatId,
+              text,
+            }),
+          },
+          'sendMessage (plain text fallback)',
+        );
+        return result.message_id;
+      }
+      throw error;
+    }
   }
 
-  async getUpdates(offset?: number, timeoutSeconds: number = 30): Promise<TelegramUpdate[]> {
+  async getUpdates(offset?: number, timeoutSeconds: number = 30, signal?: AbortSignal): Promise<TelegramUpdate[]> {
     const params = new URLSearchParams({
       timeout: String(timeoutSeconds),
       allowed_updates: JSON.stringify(['message']),
@@ -132,8 +171,8 @@ export class TelegramBotProvider implements TelegramProvider {
 
     return this.fetchWithRetry<TelegramUpdate[]>(
       `${this.baseUrl}/getUpdates?${params}`,
-      undefined,
-      'getUpdates'
+      signal ? { signal } : undefined,
+      'getUpdates',
     );
   }
 
@@ -141,7 +180,7 @@ export class TelegramBotProvider implements TelegramProvider {
     await this.fetchWithRetry<boolean>(
       `${this.baseUrl}/deleteWebhook`,
       { method: 'POST' },
-      'deleteWebhook'
+      'deleteWebhook',
     );
   }
 }

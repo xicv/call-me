@@ -13,7 +13,6 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { TelegramChatManager, loadTelegramConfig } from './telegram-chat.js';
 
 async function main() {
-  // Load Telegram config
   let config;
   try {
     config = loadTelegramConfig();
@@ -22,7 +21,6 @@ async function main() {
     process.exit(1);
   }
 
-  // Create chat manager
   const chatManager = new TelegramChatManager(config);
 
   try {
@@ -32,21 +30,19 @@ async function main() {
     process.exit(1);
   }
 
-  // Create stdio MCP server
   const mcpServer = new Server(
-    { name: 'callme-telegram', version: '3.0.0' },
-    { capabilities: { tools: {} } }
+    { name: 'callme-telegram', version: '3.1.0' },
+    { capabilities: { tools: {}, logging: {} } },
   );
 
-  const verboseMode = chatManager.isVerboseMode();
-  const listenModeEnabled = chatManager.isListenModeEnabled();
-
-  // List available tools
   mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
+    const currentVerbose = chatManager.isVerboseMode();
+    const currentListenEnabled = chatManager.isListenModeEnabled();
+
     const tools: Array<{ name: string; description: string; inputSchema: object }> = [
       {
         name: 'broadcast',
-        description: verboseMode
+        description: currentVerbose
           ? 'Stream output to the user via Telegram. Use liberally to keep the user informed of your progress, thoughts, and results. No response expected.'
           : 'Send a one-way message to the user via Telegram. No response expected. Use for status updates or notifications.',
         inputSchema: {
@@ -112,8 +108,7 @@ async function main() {
       },
     ];
 
-    // Only include listen_for_commands if listen mode is enabled
-    if (listenModeEnabled) {
+    if (currentListenEnabled) {
       tools.push({
         name: 'listen_for_commands',
         description: 'Wait for the user to send a command via Telegram. Use this to let the user control Claude remotely. Returns the user\'s message when received. After processing the command, call this again to wait for the next command.',
@@ -133,21 +128,38 @@ async function main() {
     return { tools };
   });
 
-  // Handle tool calls
-  mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
+  mcpServer.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+    const log = async (level: 'info' | 'debug' | 'warning', data: string) => {
+      await mcpServer.sendLoggingMessage({ level, data, logger: 'callme-telegram' });
+    };
+
+    const sendProgress = async (progress: number, total: number, message: string) => {
+      const progressToken = extra._meta?.progressToken;
+      if (progressToken !== undefined) {
+        await extra.sendNotification({
+          method: 'notifications/progress',
+          params: { progressToken, progress, total, message },
+        });
+      }
+    };
+
     try {
       if (request.params.name === 'broadcast') {
         const { message } = request.params.arguments as { message: string };
         await chatManager.broadcast(message);
-
-        return {
-          content: [{ type: 'text', text: 'Message sent.' }],
-        };
+        return { content: [{ type: 'text', text: 'Message sent.' }] };
       }
 
       if (request.params.name === 'send_message') {
         const { message } = request.params.arguments as { message: string };
+
+        await log('info', 'Sending message to Telegram...');
+        await sendProgress(1, 2, 'Sending message...');
+
         const result = await chatManager.initiateChat(message);
+
+        await log('info', 'User responded on Telegram');
+        await sendProgress(2, 2, 'Response received');
 
         return {
           content: [{
@@ -159,35 +171,39 @@ async function main() {
 
       if (request.params.name === 'continue_chat') {
         const { chat_id, message } = request.params.arguments as { chat_id: string; message: string };
+
+        await log('info', 'Sending follow-up message...');
+        await sendProgress(1, 2, 'Sending message...');
+
         const response = await chatManager.continueChat(chat_id, message);
 
-        return {
-          content: [{ type: 'text', text: `User's response:\n${response}` }],
-        };
+        await log('info', 'User responded');
+        await sendProgress(2, 2, 'Response received');
+
+        return { content: [{ type: 'text', text: `User's response:\n${response}` }] };
       }
 
       if (request.params.name === 'notify_user') {
         const { chat_id, message } = request.params.arguments as { chat_id: string; message: string };
         await chatManager.sendMessage(chat_id, message);
-
-        return {
-          content: [{ type: 'text', text: `Message sent: "${message}"` }],
-        };
+        return { content: [{ type: 'text', text: `Message sent: "${message}"` }] };
       }
 
       if (request.params.name === 'end_chat') {
         const { chat_id, message } = request.params.arguments as { chat_id: string; message: string };
         const { durationSeconds } = await chatManager.endChat(chat_id, message);
 
-        return {
-          content: [{ type: 'text', text: `Chat ended. Duration: ${durationSeconds}s` }],
-        };
+        await log('info', `Chat ended after ${durationSeconds}s`);
+        return { content: [{ type: 'text', text: `Chat ended. Duration: ${durationSeconds}s` }] };
       }
 
       if (request.params.name === 'listen_for_commands') {
         const { prompt } = request.params.arguments as { prompt?: string };
+
+        await log('info', 'Entering listen mode, waiting for Telegram command...');
         const command = await chatManager.listenForCommand(prompt);
 
+        await log('info', 'Command received from Telegram');
         return {
           content: [{ type: 'text', text: `User command received:\n\n${command}\n\nProcess this command, then call listen_for_commands again to wait for the next command. Use broadcast to send progress updates.` }],
         };
@@ -196,6 +212,7 @@ async function main() {
       throw new Error(`Unknown tool: ${request.params.name}`);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      await log('warning', `Tool error: ${errorMessage}`);
       return {
         content: [{ type: 'text', text: `Error: ${errorMessage}` }],
         isError: true,
@@ -203,7 +220,6 @@ async function main() {
     }
   });
 
-  // Connect MCP server via stdio
   const transport = new StdioServerTransport();
   await mcpServer.connect(transport);
 
@@ -214,10 +230,9 @@ async function main() {
   console.error(`Listen mode: ${config.listenModeEnabled ? 'enabled' : 'disabled'}`);
   console.error('');
 
-  // Graceful shutdown
   const shutdown = async () => {
     console.error('\nShutting down...');
-    chatManager.shutdown();
+    await chatManager.shutdown();
     process.exit(0);
   };
 
